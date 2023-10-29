@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 {- |
 Copyright: (c) 2020-2022 Kowainik
@@ -10,6 +11,7 @@ Functions to extract extensions from the @.cabal@ files.
 
 module Extensions.Cabal
     ( parseCabalFileExtensions
+    , parseCabalFileExtensionsWithFlags
     , parseCabalExtensions
     , extractCabalExtensions
 
@@ -25,7 +27,8 @@ import Data.Either (partitionEithers)
 import Data.Foldable (toList)
 import Data.List (nub)
 import Data.List.NonEmpty (NonEmpty (..))
-import Data.Map.Strict (Map)
+import qualified Data.Map as Map
+import Data.Map (Map)
 import Data.Maybe (catMaybes, mapMaybe)
 import Data.Text (Text)
 import Distribution.ModuleName (ModuleName, toFilePath)
@@ -34,7 +37,7 @@ import Distribution.Parsec.Error (PError, showPError)
 import Distribution.Types.Benchmark (Benchmark (..))
 import Distribution.Types.BenchmarkInterface (BenchmarkInterface (..))
 import Distribution.Types.BuildInfo (BuildInfo (..))
-import Distribution.Types.CondTree (CondTree (..))
+import Distribution.Types.CondTree (CondTree (..), CondBranch (..))
 import Distribution.Types.Executable (Executable (..))
 import Distribution.Types.ForeignLib (ForeignLib (..))
 import Distribution.Types.GenericPackageDescription (GenericPackageDescription (..))
@@ -52,9 +55,9 @@ import Extensions.Types (CabalException (..), OnOffExtension (..), ParsedExtensi
                          SafeHaskellExtension (..))
 
 import qualified Data.ByteString as ByteString
-import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Language.Haskell.Extension as Cabal
+import Distribution.PackageDescription (Condition(..), ConfVar (..))
 
 
 {- | Parse default extensions from a @.cabal@ file under given
@@ -65,9 +68,12 @@ __Throws__:
 * 'CabalException'
 -}
 parseCabalFileExtensions :: FilePath -> IO (Map FilePath ParsedExtensions)
-parseCabalFileExtensions cabalPath = doesFileExist cabalPath >>= \hasCabalFile ->
+parseCabalFileExtensions = parseCabalFileExtensionsWithFlags []
+
+parseCabalFileExtensionsWithFlags :: [ConfVar] -> FilePath -> IO (Map FilePath ParsedExtensions)
+parseCabalFileExtensionsWithFlags flags cabalPath = doesFileExist cabalPath >>= \hasCabalFile ->
     if hasCabalFile
-    then ByteString.readFile cabalPath >>= parseCabalExtensions cabalPath
+    then ByteString.readFile cabalPath >>= parseCabalExtensions flags cabalPath
     else throwIO $ CabalFileNotFound cabalPath
 
 {- | Parse default extensions from a @.cabal@ file content. This
@@ -78,13 +84,13 @@ __Throws__:
 
 * 'CabalException'
 -}
-parseCabalExtensions :: FilePath -> ByteString -> IO (Map FilePath ParsedExtensions)
-parseCabalExtensions path cabal = do
+parseCabalExtensions :: [ConfVar] -> FilePath -> ByteString -> IO (Map FilePath ParsedExtensions)
+parseCabalExtensions flags path cabal = do
     let (_warnings, res) = runParseResult $ parseGenericPackageDescription cabal
     case res of
         Left (_version, errors) ->
             throwIO $ CabalParseError $ prettyCabalErrors errors
-        Right pkgDesc -> extractCabalExtensions pkgDesc
+        Right pkgDesc -> extractCabalExtensions flags pkgDesc
   where
     prettyCabalErrors :: Foldable f => f PError -> Text
     prettyCabalErrors = Text.intercalate "\n" . map errorToText . toList
@@ -95,8 +101,8 @@ parseCabalExtensions path cabal = do
 {- | Extract Haskell Language extensions from a Cabal package
 description.
 -}
-extractCabalExtensions :: GenericPackageDescription -> IO (Map FilePath ParsedExtensions)
-extractCabalExtensions GenericPackageDescription{..} = mconcat
+extractCabalExtensions :: [ConfVar] -> GenericPackageDescription -> IO (Map FilePath ParsedExtensions)
+extractCabalExtensions flags GenericPackageDescription{..}  = mconcat
     [ foldMap    libraryToExtensions condLibrary
     , foldSndMap libraryToExtensions condSubLibraries
     , foldSndMap foreignToExtensions condForeignLibs
@@ -108,19 +114,20 @@ extractCabalExtensions GenericPackageDescription{..} = mconcat
     foldSndMap :: Monoid m => (a -> m) -> [(b, a)] -> m
     foldSndMap f = foldMap (f . snd)
 
-    libraryToExtensions :: CondTree var deps Library -> IO (Map FilePath ParsedExtensions)
+    libraryToExtensions :: CondTree ConfVar deps Library -> IO (Map FilePath ParsedExtensions)
     libraryToExtensions = condTreeToExtensions
+        flags
         (map toModulePath . exposedModules)
         libBuildInfo
 
-    foreignToExtensions :: CondTree var deps ForeignLib -> IO (Map FilePath ParsedExtensions)
-    foreignToExtensions = condTreeToExtensions (const []) foreignLibBuildInfo
+    foreignToExtensions :: CondTree ConfVar deps ForeignLib -> IO (Map FilePath ParsedExtensions)
+    foreignToExtensions = condTreeToExtensions flags (const []) foreignLibBuildInfo
 
-    exeToExtensions :: CondTree var deps Executable -> IO (Map FilePath ParsedExtensions)
-    exeToExtensions = condTreeToExtensions (\Executable{..} -> [getSymbolicPath modulePath]) buildInfo
+    exeToExtensions :: CondTree ConfVar deps Executable -> IO (Map FilePath ParsedExtensions)
+    exeToExtensions = condTreeToExtensions flags (\Executable{..} -> [getSymbolicPath modulePath]) buildInfo
 
-    testToExtensions :: CondTree var deps TestSuite -> IO (Map FilePath ParsedExtensions)
-    testToExtensions = condTreeToExtensions testMainPath testBuildInfo
+    testToExtensions :: CondTree ConfVar deps TestSuite -> IO (Map FilePath ParsedExtensions)
+    testToExtensions = condTreeToExtensions flags testMainPath testBuildInfo
       where
         testMainPath :: TestSuite -> [FilePath]
         testMainPath TestSuite{..} = case testInterface of
@@ -128,8 +135,8 @@ extractCabalExtensions GenericPackageDescription{..} = mconcat
             TestSuiteLibV09 _ m    -> [toModulePath m]
             TestSuiteUnsupported _ -> []
 
-    benchToExtensions :: CondTree var deps Benchmark -> IO (Map FilePath ParsedExtensions)
-    benchToExtensions = condTreeToExtensions benchMainPath benchmarkBuildInfo
+    benchToExtensions :: CondTree ConfVar deps Benchmark -> IO (Map FilePath ParsedExtensions)
+    benchToExtensions = condTreeToExtensions flags benchMainPath benchmarkBuildInfo
       where
         benchMainPath :: Benchmark -> [FilePath]
         benchMainPath Benchmark{..} = case benchmarkInterface of
@@ -137,30 +144,43 @@ extractCabalExtensions GenericPackageDescription{..} = mconcat
             BenchmarkUnsupported _ -> []
 
 condTreeToExtensions
-    :: (comp -> [FilePath])
+    :: [ConfVar]
+    -- ^ Flags
+    -> (comp -> [FilePath])
     -- ^ Get all modules as file paths from a component, not listed in 'BuildInfo'
     -> (comp -> BuildInfo)
     -- ^ Extract 'BuildInfo' from component
-    -> CondTree var deps comp
+    -> CondTree ConfVar deps comp
     -- ^ Cabal stanza
     -> IO (Map FilePath ParsedExtensions)
-condTreeToExtensions extractModules extractBuildInfo condTree = do
-    let comp = condTreeData condTree
-    let buildInfo = extractBuildInfo comp
+condTreeToExtensions flags extractModules extractBuildInfo condTree = do
+    let comps = map condTreeData (condTree : mapMaybe (evalBranch flags) (condTreeComponents condTree))
+    let buildInfos = map extractBuildInfo comps
 #if MIN_VERSION_Cabal(3,6,0)
-    let srcDirs = getSymbolicPath <$> hsSourceDirs buildInfo
+    let srcDirs = concatMap ((getSymbolicPath <$>) . hsSourceDirs) buildInfos
 #else
-    let srcDirs = hsSourceDirs buildInfo
+    let srcDirs = map hsSourceDirs buildInfos
 #endif
-    let modules = extractModules comp ++
-            map toModulePath (otherModules buildInfo ++ autogenModules buildInfo)
-    let (safeExts, parsedExtensionsAll) = partitionEithers $ mapMaybe cabalToGhcExtension $ defaultExtensions buildInfo
+    let modules = concatMap extractModules comps ++
+            map toModulePath (concatMap otherModules buildInfos ++ concatMap autogenModules buildInfos)
+    let (safeExts, parsedExtensionsAll) = partitionEithers $ mapMaybe cabalToGhcExtension $ concatMap defaultExtensions buildInfos
     parsedExtensionsSafe <- case nub safeExts of
         []   -> pure Nothing
         [x]  -> pure $ Just x
         x:xs -> throwIO $ CabalSafeExtensionsConflict $ x :| xs
+    modulesToExtensions ParsedExtensions {..} srcDirs modules
 
-    modulesToExtensions ParsedExtensions{..} srcDirs modules
+evalBranch :: [ConfVar] -> CondBranch ConfVar deps comp -> Maybe (CondTree ConfVar deps comp)
+evalBranch flags (CondBranch cond thenBranch elseBranch) =
+    if evalCondition flags cond then Just thenBranch else elseBranch
+
+evalCondition :: [ConfVar] -> Condition ConfVar -> Bool
+-- How should the code behave if the variable is not in the map?
+evalCondition flags (Var var) = var `elem` flags
+evalCondition _ (Lit b) = b
+evalCondition flags (CNot c) = not (evalCondition flags c)
+evalCondition flags (COr c1 c2) = evalCondition flags c1 || evalCondition flags c2
+evalCondition flags (CAnd c1 c2) = evalCondition flags c1 && evalCondition flags c2
 
 modulesToExtensions
     :: ParsedExtensions
