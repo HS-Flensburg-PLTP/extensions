@@ -24,31 +24,31 @@ cabalSpec = describe "Cabal file Extensions Parser" $ do
         parseCabalFileExtensions "xno-extensions.cabal" `shouldThrow`
             (== CabalFileNotFound "xno-extensions.cabal")
     it "should throw 'CabalParseError'" $
-        parseCabalExtensions exampleCabal "stack.yaml" `shouldThrow`
+        parseCabalExtensions [] exampleCabal "stack.yaml" `shouldThrow`
             (== CabalParseError "example.cabal:0:0: \"name\" field missing")
     it "should throw 'CabalSafeExtensionsConflict'" $
-        parseCabalExtensions exampleCabal conflictSafeCabal `shouldThrow`
+        parseCabalExtensions [] exampleCabal conflictSafeCabal `shouldThrow`
             (== CabalSafeExtensionsConflict (Safe :| [Unsafe]))
     it "should parse minimal Cabal file" $
-        parseCabalExtensions exampleCabal minimalCabal >>= \extMap ->
+        parseCabalExtensions [] exampleCabal minimalCabal >>= \extMap ->
             extMap `shouldBe` mempty
     it "should parse Cabal file with a single module in a library" $
-        parseCabalExtensions exampleCabal singleModuleCabal >>= \extMap ->
+        parseCabalExtensions [] exampleCabal singleModuleCabal >>= \extMap ->
             extMap `shouldBe` singleModuleMap
     it "should parse Cabal file with multiple directories" $
-        parseCabalExtensions exampleCabal multipleDirsCabal >>= \extMap ->
+        parseCabalExtensions [] exampleCabal multipleDirsCabal >>= \extMap ->
             extMap `shouldBe` singleModuleMap
     it "should parse Cabal file with default-extensions" $
-        parseCabalExtensions exampleCabal singleExtensionCabal >>= \extMap ->
+        parseCabalExtensions [] exampleCabal singleExtensionCabal >>= \extMap ->
             extMap `shouldBe` singleExtensionMap
     it "should parse Cabal file with default-extensions inside common stanza" $
-        parseCabalExtensions exampleCabal commonStanzaCabal >>= \extMap ->
+        parseCabalExtensions [] exampleCabal commonStanzaCabal >>= \extMap ->
             extMap `shouldBe` singleExtensionMap
     it "should parse Cabal file with Safe in default-extensions" $
-        parseCabalExtensions exampleCabal safeHaskellCabal >>= \extMap ->
+        parseCabalExtensions [] exampleCabal safeHaskellCabal >>= \extMap ->
             extMap `shouldBe` safeExtensionMap
     it "should parse Cabal file with different safe extensions in different stanzas" $
-        parseCabalExtensions exampleCabal manySafeCabal >>= \extMap ->
+        parseCabalExtensions [] exampleCabal manySafeCabal >>= \extMap ->
             extMap `shouldBe` manySafeMap
     it "should parse extensions.cabal" $
         parseCabalFileExtensions "extensions.cabal" >>= \extMap ->
