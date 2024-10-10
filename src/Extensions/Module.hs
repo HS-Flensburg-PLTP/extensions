@@ -29,9 +29,10 @@ import Data.Foldable (traverse_)
 import Data.Functor ((<&>))
 import Data.List (nub)
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.Maybe (catMaybes)
 import System.Directory (doesFileExist)
-import Text.Parsec (alphaNum, between, char, eof, many, many1, manyTill, noneOf, oneOf, parse,
-                    sepBy1, skipMany, try, (<|>))
+import Text.Parsec (alphaNum, between, char, eof, many, many1, manyTill, noneOf, oneOf, optional,
+                    parse, sepBy1, skipMany, try, (<|>))
 import Text.Parsec.ByteString (Parser)
 import Text.Parsec.Char (anyChar, endOfLine, letter, newline, space, spaces, string)
 import Text.Read (readMaybe)
@@ -40,6 +41,7 @@ import Extensions.Types (ModuleParseError (..), OnOffExtension (..), ParsedExten
                          SafeHaskellExtension (..), readOnOffExtension)
 
 import qualified Data.ByteString as BS
+import GHC.LanguageExtensions.Type (Extension(..))
 
 
 -- | Internal data type for known and unknown extensions.
@@ -146,14 +148,20 @@ languagePragmaP = pragmaP $ istringP "LANGUAGE"
 
 {- | Parser for GHC options pragma keywords: @\{\-\# OPTIONS_GHC YYY \#\-\}@
 -}
-optionsGhcP :: Parser [a]
-optionsGhcP = [] <$ optionsGhcPragmaP (many1 ghcOptionP)
-  where
-    ghcOptionP :: Parser String
-    ghcOptionP = newLines *> many1 (alphaNum <|> char '-') <* newLines
+optionsGhcP :: Parser [ParsedExtension]
+optionsGhcP = optionsGhcPragmaP (catMaybes <$> many1 ghcOptionP)
 
 optionsGhcPragmaP :: Parser a -> Parser a
-optionsGhcPragmaP = pragmaP $ istringP "OPTIONS_GHC"
+optionsGhcPragmaP = pragmaP $ istringP "OPTIONS" >> optional (istringP "_GHC")
+
+ghcOptionP :: Parser (Maybe ParsedExtension)
+ghcOptionP =
+  newLines *> (readOption <$> many1 (alphaNum <|> char '-')) <* newLines
+
+readOption :: String -> Maybe ParsedExtension
+readOption = \case
+    "-cpp"                       -> Just (KnownExtension (On Cpp))
+    _                            -> Nothing
 
 -- | Parser for case-insensitive strings.
 istringP :: String -> Parser ()

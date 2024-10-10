@@ -309,6 +309,9 @@ cppSpec = describe "Parsing extensions with CPP" $ do
 optionsGhcSpec :: Spec
 optionsGhcSpec = describe "Parsing LANGUAGE and OPTIONS_GHC pragmas" $ do
     itShouldParse
+        "{-# OPTIONS -cpp #-}"
+        [Cpp]
+    itShouldParse
         "{-# OPTIONS_GHC -fno-warn-orphans #-}"
         []
     itShouldParse
