@@ -45,7 +45,7 @@ import Distribution.Types.Library (Library (..))
 import Distribution.Types.TestSuite (TestSuite (..))
 import Distribution.Types.TestSuiteInterface (TestSuiteInterface (..))
 #if MIN_VERSION_Cabal(3,6,0)
-import Distribution.Utils.Path (getSymbolicPath)
+import Distribution.Utils.Path (getSymbolicPath, unsafeMakeSymbolicPath)
 #endif
 import GHC.LanguageExtensions.Type (Extension (..))
 import System.Directory (doesFileExist)
@@ -124,14 +124,14 @@ extractCabalExtensions flags GenericPackageDescription{..}  = mconcat
     foreignToExtensions = condTreeToExtensions flags (const []) foreignLibBuildInfo
 
     exeToExtensions :: CondTree ConfVar deps Executable -> IO (Map FilePath ParsedExtensions)
-    exeToExtensions = condTreeToExtensions flags (\Executable{..} -> [getSymbolicPath modulePath]) buildInfo
+    exeToExtensions = condTreeToExtensions flags (\Executable{..} -> [getSymbolicPath (unsafeMakeSymbolicPath modulePath)]) buildInfo
 
     testToExtensions :: CondTree ConfVar deps TestSuite -> IO (Map FilePath ParsedExtensions)
     testToExtensions = condTreeToExtensions flags testMainPath testBuildInfo
       where
         testMainPath :: TestSuite -> [FilePath]
         testMainPath TestSuite{..} = case testInterface of
-            TestSuiteExeV10 _ path -> [getSymbolicPath path]
+            TestSuiteExeV10 _ path -> [getSymbolicPath (unsafeMakeSymbolicPath path)]
             TestSuiteLibV09 _ m    -> [toModulePath m]
             TestSuiteUnsupported _ -> []
 
@@ -140,7 +140,7 @@ extractCabalExtensions flags GenericPackageDescription{..}  = mconcat
       where
         benchMainPath :: Benchmark -> [FilePath]
         benchMainPath Benchmark{..} = case benchmarkInterface of
-            BenchmarkExeV10 _ path -> [getSymbolicPath path]
+            BenchmarkExeV10 _ path -> [getSymbolicPath (unsafeMakeSymbolicPath path)]
             BenchmarkUnsupported _ -> []
 
 condTreeToExtensions
@@ -435,9 +435,9 @@ toGhcExtension = \case
     Cabal.MultilineStrings                  -> Just MultilineStrings
     Cabal.OrPatterns                        -> Just OrPatterns
 #else
-    Cabal.NamedDefaults                     -> Nothing
-    Cabal.MultilineStrings                  -> Nothing
-    Cabal.OrPatterns                        -> Nothing
+    -- Cabal.NamedDefaults                     -> Nothing
+    -- Cabal.MultilineStrings                  -> Nothing
+    -- Cabal.OrPatterns                        -> Nothing
 #endif
     -- GHC extensions, parsed by both Cabal and GHC, but don't have an Extension constructor
     Cabal.Safe                              -> Nothing
