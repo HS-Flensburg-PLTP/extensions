@@ -111,7 +111,7 @@ extensionsP :: Parser [ParsedExtension]
 extensionsP = concat <$>
     ( newLines *>
       manyTill
-        (try singleExtensionsP <|> try optionsGhcP <|> try commentP <|> try cppP)
+        (try singleExtensionsP <|> try optionsGhcP <|> [] <$ try commentP <|> try cppP)
         (eof <|> (() <$ manyTill endOfLine letter))
     )
 
@@ -194,16 +194,16 @@ and multi-line comments:
   \-\}
   @
 -}
-commentP :: Parser [a]
+commentP :: Parser String
 commentP = newLines *> (try singleLineCommentP <|> try multiLineCommentP) <* newLines
   where
-    singleLineCommentP :: Parser [a]
-    singleLineCommentP = [] <$
-        (string "--" *> manyTill anyChar (try (() <$ endOfLine) <|> eof))
+    singleLineCommentP :: Parser String
+    singleLineCommentP =
+        string "--" *> manyTill anyChar (try (() <$ endOfLine) <|> eof)
 
-    multiLineCommentP :: Parser [a]
-    multiLineCommentP = [] <$
-        (string "{-" *> manyTill anyChar (try $ string "-}"))
+    multiLineCommentP :: Parser String
+    multiLineCommentP =
+        concat <$> (string "{-" *> manyTill (try multiLineCommentP <|> (: []) <$> anyChar) (try (string "-}")))
 
 {- | CPP syntax parser.
 
