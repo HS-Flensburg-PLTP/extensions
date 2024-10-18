@@ -126,20 +126,21 @@ extensionsP = concat <$>
 -}
 singleExtensionsP :: Parser [ParsedExtension]
 singleExtensionsP =
-    languagePragmaP (commaSep (nonExtP *> extensionP <* nonExtP) <* spaces)
+    languagePragmaP (concat <$> (commaSep (nonExtP *> extensionP <* nonExtP) <* spaces))
 
 nonExtP :: Parser ()
 nonExtP = skipMany (try cppP <|> try commentP)
 
 {- | Parses all known and unknown 'OnOffExtension's or 'SafeHaskellExtension's.
+     The result has to be a list because the language pragma `Haskell2010` is actually a name for a list of extensions.
 -}
-extensionP :: Parser ParsedExtension
+extensionP :: Parser [ParsedExtension]
 extensionP = (spaces *> many1 alphaNum <* spaces) <&> \txt ->
     case readOnOffExtension txt of
-        Just ext -> KnownExtension ext
-        Nothing  -> case readMaybe @SafeHaskellExtension txt of
-            Just ext -> SafeExtension ext
-            Nothing  -> UnknownExtension txt
+        exts@(_:_) -> fmap KnownExtension exts
+        []  -> case readMaybe @SafeHaskellExtension txt of
+            Just ext -> [SafeExtension ext]
+            Nothing  -> [UnknownExtension txt]
 
 {- | Parser for standard language pragma keywords: @\{\-\# LANGUAGE XXX \#\-\}@
 -}

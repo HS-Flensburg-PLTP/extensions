@@ -62,6 +62,7 @@ import Text.Read (readMaybe)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Text.Parsec as Parsec
+import qualified Data.Maybe as Maybe
 
 
 {- | Main returned data type that includes merged 'OnOffExtension's and possibly
@@ -180,29 +181,30 @@ showOnOffExtension = \case
 
 {- | Parse 'OnOffExtension' from a string that specifies extension.
 -}
-readOnOffExtension :: String -> Maybe OnOffExtension
+readOnOffExtension :: String -> [OnOffExtension]
 readOnOffExtension s =
     (On <$> readExtension s) <|> (Off <$> readOffExtension)
   where
-    readOffExtension :: Maybe Extension
+    readOffExtension :: [Extension]
     readOffExtension = do
-        ("No", ext) <- Just $ splitAt 2 s
+        ("No", ext) <- [splitAt 2 s]
         readExtension ext
 
 {- | Parse 'Extension' from a string. 'Read' instance for 'Extension'
 doesn't always work since some extensions are named differently.
 -}
-readExtension :: String -> Maybe Extension
+readExtension :: String -> [Extension]
 readExtension = \case
-    "GeneralisedNewtypeDeriving" -> Just GeneralizedNewtypeDeriving
+    "GeneralisedNewtypeDeriving" -> [GeneralizedNewtypeDeriving]
+    "Haskell2010"                -> default2010Extensions
 #if !MIN_VERSION_ghc_boot_th(9,4,1)
-    "NamedFieldPuns"             -> Just RecordPuns
+    "NamedFieldPuns"             -> [RecordPuns]
     "RecordPuns"                 -> Nothing
 #endif
-    "Rank2Types"                 -> Just RankNTypes
-    "CPP"                        -> Just Cpp
-    "Cpp"                        -> Nothing
-    s                            -> readMaybe s
+    "Rank2Types"                 -> [RankNTypes]
+    "CPP"                        -> [Cpp]
+    "Cpp"                        -> []
+    s                            -> Maybe.maybeToList (readMaybe s)
 
 {- | Take accumulated 'OnOffExtension's, and merge them into one 'Set',
 excluding enabling of 'default2010Extensions'.

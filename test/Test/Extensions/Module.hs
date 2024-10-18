@@ -97,6 +97,19 @@ onlyExtensionsSpec = describe "Parsing only extensions without anything else" $ 
         , "#-}"
         ])
         [Cpp, TypeApplications, LambdaCase]
+    itShouldParse
+        "{-# LANGUAGE Haskell2010 #-}"
+        [ ImplicitPrelude
+        , StarIsType
+        , MonomorphismRestriction
+        , DatatypeContexts
+        , TraditionalRecordSyntax
+        , EmptyDataDecls
+        , ForeignFunctionInterface
+        , PatternGuards
+        , DoAndIfThenElse
+        , RelaxedPolyRec
+        , CUSKs]
 
 singleLineCommentsSpec :: Spec
 singleLineCommentsSpec = describe "Parsing extensions with single-line comments" $ do
