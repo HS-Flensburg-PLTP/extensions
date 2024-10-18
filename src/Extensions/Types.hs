@@ -201,6 +201,7 @@ readExtension = \case
     "NamedFieldPuns"             -> [RecordPuns]
     "RecordPuns"                 -> Nothing
 #endif
+    "PolymorphicComponents"      -> [RankNTypes]
     "Rank2Types"                 -> [RankNTypes]
     "CPP"                        -> [Cpp]
     "Cpp"                        -> []
