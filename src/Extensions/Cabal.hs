@@ -10,7 +10,10 @@ Functions to extract extensions from the @.cabal@ files.
 -}
 
 module Extensions.Cabal
-    ( parseCabalFileExtensions
+    ( Config (..)
+    , Inclusion (..)
+
+    , parseCabalFileExtensions
     , parseCabalFileExtensionsWithFlags
     , parseCabalExtensions
     , extractCabalExtensions
@@ -30,6 +33,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.Maybe (catMaybes, mapMaybe)
+import qualified Data.Monoid.Extra as Monoid.Extra
 import Data.Text (Text)
 import Distribution.ModuleName (ModuleName, toFilePath)
 import Distribution.PackageDescription.Parsec (parseGenericPackageDescription, runParseResult)
@@ -60,6 +64,21 @@ import qualified Language.Haskell.Extension as Cabal
 import Distribution.PackageDescription (Condition(..), ConfVar (..))
 
 
+data Inclusion = Include | Exclude
+  deriving stock Eq
+
+data Config = Config
+  { libraryModules :: Inclusion,
+    executableModules :: Inclusion,
+    foreignModules :: Inclusion,
+    testModules :: Inclusion,
+    benchmarkModules :: Inclusion
+  }
+
+defaultConfig :: Config
+defaultConfig = Config Include Include Include Include Include
+
+
 {- | Parse default extensions from a @.cabal@ file under given
 'FilePath'.
 
@@ -68,12 +87,12 @@ __Throws__:
 * 'CabalException'
 -}
 parseCabalFileExtensions :: FilePath -> IO (Map FilePath ParsedExtensions)
-parseCabalFileExtensions = parseCabalFileExtensionsWithFlags []
+parseCabalFileExtensions = parseCabalFileExtensionsWithFlags defaultConfig []
 
-parseCabalFileExtensionsWithFlags :: [ConfVar] -> FilePath -> IO (Map FilePath ParsedExtensions)
-parseCabalFileExtensionsWithFlags flags cabalPath = doesFileExist cabalPath >>= \hasCabalFile ->
+parseCabalFileExtensionsWithFlags :: Config -> [ConfVar] -> FilePath -> IO (Map FilePath ParsedExtensions)
+parseCabalFileExtensionsWithFlags config flags cabalPath = doesFileExist cabalPath >>= \hasCabalFile ->
     if hasCabalFile
-    then ByteString.readFile cabalPath >>= parseCabalExtensions flags cabalPath
+    then ByteString.readFile cabalPath >>= parseCabalExtensions config flags cabalPath
     else throwIO $ CabalFileNotFound cabalPath
 
 {- | Parse default extensions from a @.cabal@ file content. This
@@ -84,13 +103,13 @@ __Throws__:
 
 * 'CabalException'
 -}
-parseCabalExtensions :: [ConfVar] -> FilePath -> ByteString -> IO (Map FilePath ParsedExtensions)
-parseCabalExtensions flags path cabal = do
+parseCabalExtensions :: Config -> [ConfVar] -> FilePath -> ByteString -> IO (Map FilePath ParsedExtensions)
+parseCabalExtensions config flags path cabal = do
     let (_warnings, res) = runParseResult $ parseGenericPackageDescription cabal
     case res of
         Left (_version, errors) ->
             throwIO $ CabalParseError $ prettyCabalErrors errors
-        Right pkgDesc -> extractCabalExtensions flags pkgDesc
+        Right pkgDesc -> extractCabalExtensions config flags pkgDesc
   where
     prettyCabalErrors :: Foldable f => f PError -> Text
     prettyCabalErrors = Text.intercalate "\n" . map errorToText . toList
@@ -98,18 +117,20 @@ parseCabalExtensions flags path cabal = do
     errorToText :: PError -> Text
     errorToText = Text.pack . showPError path
 
+
 {- | Extract Haskell Language extensions from a Cabal package
 description.
 -}
-extractCabalExtensions :: [ConfVar] -> GenericPackageDescription -> IO (Map FilePath ParsedExtensions)
-extractCabalExtensions flags GenericPackageDescription{..}  = mconcat
-    [ foldMap    libraryToExtensions condLibrary
-    , foldSndMap libraryToExtensions condSubLibraries
-    , foldSndMap foreignToExtensions condForeignLibs
-    , foldSndMap exeToExtensions     condExecutables
-    , foldSndMap testToExtensions    condTestSuites
-    , foldSndMap benchToExtensions   condBenchmarks
-    ]
+extractCabalExtensions :: Config -> [ConfVar] -> GenericPackageDescription -> IO (Map FilePath ParsedExtensions)
+extractCabalExtensions config flags GenericPackageDescription{..} =
+    mconcat $ map (uncurry Monoid.Extra.mwhen)
+      [ (libraryModules config == Include, foldMap libraryToExtensions condLibrary)
+      , (libraryModules config == Include, foldSndMap libraryToExtensions condSubLibraries)
+      , (foreignModules config == Include, foldSndMap foreignToExtensions condForeignLibs)
+      , (executableModules config == Include, foldSndMap exeToExtensions condExecutables)
+      , (testModules config == Include, foldSndMap testToExtensions    condTestSuites)
+      , (benchmarkModules config == Include, foldSndMap benchToExtensions   condBenchmarks)
+      ]
   where
     foldSndMap :: Monoid m => (a -> m) -> [(b, a)] -> m
     foldSndMap f = foldMap (f . snd)
