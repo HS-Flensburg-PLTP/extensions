@@ -184,12 +184,14 @@ condTreeToExtensions flags extractModules extractBuildInfo condTree = do
 #endif
     let modules = concatMap extractModules comps ++
             map toModulePath (concatMap otherModules buildInfos ++ concatMap autogenModules buildInfos)
-    let (safeExts, parsedExtensionsAll) = partitionEithers $ mapMaybe cabalToGhcExtension $ concatMap defaultExtensions buildInfos
+    let (safeExts, parsedExtensionsAll) = partitionEithers $ mapMaybe cabalToGhcExtension $ concatMap extensions buildInfos
     parsedExtensionsSafe <- case nub safeExts of
         []   -> pure Nothing
         [x]  -> pure $ Just x
         x:xs -> throwIO $ CabalSafeExtensionsConflict $ x :| xs
     modulesToExtensions ParsedExtensions {..} srcDirs modules
+  where
+    extensions buildInfo = defaultExtensions buildInfo ++ oldExtensions buildInfo
 
 evalBranch :: [ConfVar] -> CondBranch ConfVar deps comp -> Maybe (CondTree ConfVar deps comp)
 evalBranch flags (CondBranch cond thenBranch elseBranch) =
